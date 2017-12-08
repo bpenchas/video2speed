@@ -1,2 +1,2 @@
 #!/bin/bash
-floyd run --data bpenchas/datasets/vgg19-weights:vgg-weights --data bpenchas/datasets/car-frames:car-frames --mode jupyter
+floyd run --gpu --data bpenchas/datasets/train/3:train --data bpenchas/datasets/vgg19-weights:vgg-weights --data bpenchas/datasets/test:test --mode jupyter

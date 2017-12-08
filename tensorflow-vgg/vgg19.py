@@ -22,41 +22,44 @@ class BallerVgg:
         self.data_dict = np.load(vgg19_npy_path, encoding='latin1').item()
         print("npy file loaded")
 
-    def build(self, pairs):
+    def build(self, batch):
+        vgg_vol = self.vgg_volume(batch) # batch_size x 28 x 28 x 256
 
-        vgg_vol = self.vgg_volume(pairs) # 2 x 28 x 28 x 256
-        self.concat_vol = tf.concat(vgg_vol, 2)
+        evens = tf.strided_slice(vgg_vol,(0,0,0,0), (batch.shape[0],28,28,256), (2,1,1,1))
+        odds = tf.strided_slice(vgg_vol,(1,0,0,0), (batch.shape[0],28,28,256), (2,1,1,1))
+
+        self.concat_vol = tf.concat([evens, odds], 3)
 
         # Make some conv layers, make some fc layers, that are variable/trainable.
-        self.conv4_1 = self.conv_layer_trainable(self.concat_vol, 512, 512, "conv4_1")
-        self.conv4_2 = self.conv_layer_trainable(self.conv4_1, 512, 512, "conv4_2")
-        self.conv4_3 = self.conv_layer_trainable(self.conv4_2, 512, 512, "conv4_3")
-        self.conv4_4 = self.conv_layer_trainable(self.conv4_3, 512, 512, "conv4_4")
-        self.pool4 = self.max_pool(self.conv4_4, 'pool4')
+        self.conv4_1 = self.conv_layer_trainable(self.concat_vol, 512, 512, "baller_conv4_1")
+        self.conv4_2 = self.conv_layer_trainable(self.conv4_1, 512, 512, "baller_conv4_2")
+        self.conv4_3 = self.conv_layer_trainable(self.conv4_2, 512, 512, "baller_conv4_3")
+        self.conv4_4 = self.conv_layer_trainable(self.conv4_3, 512, 512, "baller_conv4_4")
+        self.pool4 = self.max_pool(self.conv4_4, 'baller_pool4')
 
-        self.conv5_1 = self.conv_layer_trainable(self.pool4, 512, 512, "conv5_1")
-        self.conv5_2 = self.conv_layer_trainable(self.conv5_1, 512, 512, "conv5_2")
-        self.conv5_3 = self.conv_layer_trainable(self.conv5_2, 512, 512, "conv5_3")
-        self.conv5_4 = self.conv_layer_trainable(self.conv5_3, 512, 512, "conv5_4")
-        self.pool5 = self.max_pool(self.conv5_4, 'pool5')
+        self.conv5_1 = self.conv_layer_trainable(self.pool4, 512, 512, "baller_conv5_1")
+        self.conv5_2 = self.conv_layer_trainable(self.conv5_1, 512, 512, "baller_conv5_2")
+        self.conv5_3 = self.conv_layer_trainable(self.conv5_2, 512, 512, "baller_conv5_3")
+        self.conv5_4 = self.conv_layer_trainable(self.conv5_3, 512, 512, "baller_conv5_4")
+        self.pool5 = self.max_pool(self.conv5_4, 'baller_pool5')
 
-        self.fc6 = self.fc_layer_trainable(self.pool5, 25088, 4096, "fc6")  # 25088 = ((224 // (2 ** 5)) ** 2) * 512
+        self.fc6 = self.fc_layer_trainable(self.pool5, 25088, 4096, "baller_fc6")  # 25088 = ((224 // (2 ** 5)) ** 2) * 512
         self.relu6 = tf.nn.relu(self.fc6)
         # if train_mode is not None:
         #     self.relu6 = tf.cond(train_mode, lambda: tf.nn.dropout(self.relu6, self.dropout), lambda: self.relu6)
         # elif self.trainable:
         #     self.relu6 = tf.nn.dropout(self.relu6, self.dropout)
 
-        self.fc7 = self.fc_layer_trainable(self.relu6, 4096, 4096, "fc7")
+        self.fc7 = self.fc_layer_trainable(self.relu6, 4096, 4096, "baller_fc7")
         self.relu7 = tf.nn.relu(self.fc7)
         # if train_mode is not None:
         #     self.relu7 = tf.cond(train_mode, lambda: tf.nn.dropout(self.relu7, self.dropout), lambda: self.relu7)
         # elif self.trainable:
         #     self.relu7 = tf.nn.dropout(self.relu7, self.dropout)
 
-        self.fc8 = self.fc_layer_trainable(self.relu7, 4096, 20, "fc8")
+        self.fc8 = self.fc_layer_trainable(self.relu7, 4096, 20, "baller_fc8")
 
-        self.prob = tf.nn.softmax(self.fc8, name="prob")
+        self.prob = tf.nn.softmax(self.fc8, name="baller_prob")
 
     def vgg_volume(self, rgb):
         """
@@ -205,7 +208,22 @@ class BallerVgg:
 
         return weights, biases
 
+    def save_npy(self, sess, npy_path="./vgg19-save.npy"):
+        assert isinstance(sess, tf.Session)
+        data_dict = {}
+
+        for (name, idx), var in list(self.var_dict.items()):
+            var_out = sess.run(var)
+            if name not in data_dict:
+                data_dict[name] = {}
+            data_dict[name][idx] = var_out
+
+        np.save(npy_path, data_dict)
+        print(("file saved", npy_path))
+        return npy_path
+
     def get_var(self, initial_value, name, idx, var_name):
+        # TODO add new_dict lookup here for learned parameters
         if self.data_dict is not None and name in self.data_dict:
             value = self.data_dict[name][idx]
         else:
@@ -218,7 +236,7 @@ class BallerVgg:
 
         self.var_dict[(name, idx)] = var
 
-        print(var_name, var.get_shape().as_list())
+        # print(var_name, var.get_shape().as_list())
         assert var.get_shape() == initial_value.get_shape()
 
         return var
